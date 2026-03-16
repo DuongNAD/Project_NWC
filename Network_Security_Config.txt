@@ -1,0 +1,93 @@
+! =========================================================================
+! PHẦN 1: CẤU HÌNH ROUTER 2911 (Không cần dán lại nếu Router đã OK)
+! =========================================================================
+enable
+configure terminal
+hostname EdgeRouter
+
+ip dhcp pool IT_POOL
+ network 192.168.10.0 255.255.255.0
+ default-router 192.168.10.1
+ip dhcp pool KETOAN_POOL
+ network 192.168.20.0 255.255.255.0
+ default-router 192.168.20.1
+
+interface GigabitEthernet0/0
+ no shutdown
+
+interface GigabitEthernet0/0.10
+ encapsulation dot1Q 10
+ ip address 192.168.10.1 255.255.255.0
+interface GigabitEthernet0/0.20
+ encapsulation dot1Q 20
+ ip address 192.168.20.1 255.255.255.0
+
+ip access-list extended BLOCK_IT_TO_KETOAN
+ deny ip 192.168.10.0 0.0.0.255 192.168.20.0 0.0.0.255
+ permit ip any any
+ !
+interface GigabitEthernet0/0.10
+ ip access-group BLOCK_IT_TO_KETOAN in
+
+ip access-list extended BLOCK_OUTSIDE
+ deny ip any 192.168.0.0 0.0.255.255
+ permit ip any any
+ !
+interface GigabitEthernet0/1
+ ip address dhcp
+ no shutdown
+ ip access-group BLOCK_OUTSIDE in
+exit
+
+
+! =========================================================================
+! PHẦN 2: SỬA LỖI CẤU HÌNH SWITCH 2960 (COPY TOÀN BỘ ĐOẠN NÀY DÁN VÀO SWITCH)
+! =========================================================================
+enable
+configure terminal
+hostname CoreSwitch
+
+! Xóa bỏ cấu hình cũ bị sai cổng
+default interface range FastEthernet0/1 - 6
+
+vlan 10
+ name IT
+vlan 20
+ name KeToan
+
+! --- 1. CHỈNH LẠI CỔNG NỐI LÊN ROUTER LÀ Fa0/1 ---
+interface FastEthernet0/1
+ switchport mode trunk
+ ip dhcp snooping trust
+ ip arp inspection trust
+exit
+
+! --- BẢO VỆ MITM ---
+ip dhcp snooping vlan 10,20
+ip dhcp snooping
+ip arp inspection vlan 10,20
+
+! --- 2. THIẾT LẬP BẢO MẬT CHO CÁC MÁY TÍNH (Fa0/2 đến Fa0/4) ---
+interface range FastEthernet0/2 - 4
+ switchport mode access
+ 
+ switchport port-security
+ switchport port-security maximum 1
+ switchport port-security mac-address sticky
+ switchport port-security violation restrict
+ 
+ ip verify source
+ 
+ storm-control broadcast level 5.0
+ storm-control action trap
+
+! --- 3. ĐƯA CÁC MÁY VÀO ĐÚNG PHÒNG BAN THEO DÂY BẠN CẮM ---
+interface FastEthernet0/2
+ switchport access vlan 10
+!
+interface FastEthernet0/3
+ switchport access vlan 20
+!
+interface FastEthernet0/4
+ switchport access vlan 10
+exit
